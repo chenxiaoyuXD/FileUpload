@@ -4,55 +4,54 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"errors"
 	"io"
 )
 
-var key = GenerateKey()
+var key = []byte("0^$D1A=LL-oRC4E}bld7Kd?]s7sFJ,HZ") // Ensure this is 32 bytes (for AES-256)
 
-func GenerateKey() []byte {
-	// Generate a random key.
-	key := make([]byte, 32)
-	_, err := rand.Read(key)
-	if err != nil {
-		panic(err)
-	}
-
-	return key
-}
-
+// Encrypt encrypts data using AES-CFB mode.
 func Encrypt(data []byte) ([]byte, error) {
-	// Encrypt data using AES-GCM.
+	// Create AES cipher block
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
 
+	// Create ciphertext slice with room for IV and data
 	ciphertext := make([]byte, aes.BlockSize+len(data))
+
+	// Generate a random IV and store it in the first block of the ciphertext
 	iv := ciphertext[:aes.BlockSize]
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return nil, err
 	}
 
-	stream := cipher.NewCFBDecrypter(block, iv)
+	// Create a stream encrypter and encrypt the data
+	stream := cipher.NewCFBEncrypter(block, iv)
 	stream.XORKeyStream(ciphertext[aes.BlockSize:], data)
 
 	return ciphertext, nil
 }
 
+// Decrypt decrypts data using AES-CFB mode.
 func Decrypt(data []byte) ([]byte, error) {
-	// Decrypt data using AES-GCM.
+	// Create AES cipher block
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
 
+	// Ensure the ciphertext length is valid
 	if len(data) < aes.BlockSize {
-		return nil, io.ErrShortBuffer
+		return nil, errors.New("ciphertext too short")
 	}
 
+	// Extract the IV from the first block of the ciphertext
 	iv := data[:aes.BlockSize]
 	data = data[aes.BlockSize:]
 
+	// Create a stream decrypter and decrypt the data
 	stream := cipher.NewCFBDecrypter(block, iv)
 	stream.XORKeyStream(data, data)
 

@@ -13,6 +13,8 @@ import (
 
 var minioClient *minio.Client
 
+const defaultChunkSize = 1 * 1024 * 1024 // 1MB
+
 func InitMinio() {
 	// Initialize minio client object.
 	var err error
@@ -26,33 +28,10 @@ func InitMinio() {
 }
 
 func UploadFile(c *gin.Context) {
-	// Upload file to minio.
-	file, header, err := c.Request.FormFile("file")
-	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-	defer file.Close()
-
-	// Encrypt file before uploading.
-	buf := new(bytes.Buffer)
-	_, err = io.Copy(buf, file)
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
-	encryptedData, err := utils.Encrypt(buf.Bytes())
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
 	bucketName := "uploads"
-	objectName := header.Filename
 
 	ctx := context.Background()
-	err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
+	err := minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
 	if err != nil {
 		if exists, _ := minioClient.BucketExists(ctx, bucketName); !exists {
 			c.JSON(500, gin.H{"error": err.Error()})
@@ -60,12 +39,69 @@ func UploadFile(c *gin.Context) {
 		}
 	}
 
-	_, err = minioClient.PutObject(ctx, bucketName, objectName, bytes.NewReader(encryptedData), int64(len(encryptedData)), minio.PutObjectOptions{})
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	defer src.Close()
+	// Get the file size
+	fileSize := file.Size
+
+	uploadID, err := minioClient.NewMultipartUpload(ctx, bucketName, file.Filename, minio.PutObjectOptions{})
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
+	var partNumber int
+	var uploadedParts []minio.CompletePart
+	for offset := int64(0); offset < fileSize; offset += int64(defaultChunkSize) {
+		partNumber++
+		chunkSize := int64(defaultChunkSize)
+		if offset+chunkSize > fileSize {
+			chunkSize = fileSize - offset
+		}
+
+		// Read a chunk of data
+		chunk := make([]byte, chunkSize)
+		_, err := io.ReadFull(src, chunk)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Encrypt the chunk
+		encryptedChunk, err := utils.Encrypt(chunk)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Upload the encrypted chunk
+		uploadPart, err := minioClient.PutObject(ctx, bucketName, file.Filename, uploadID, partNumber, bytes.NewReader(encryptedChunk), int64(len(encryptedChunk)), "", "", nil)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+		uploadedParts = append(uploadedParts, minio.CompletePart{
+			PartNumber: partNumber,
+			ETag:       uploadPart.ETag,
+		})
+	}
+
+	// Complete multipart upload
+	_, err = minioClient.CompleteMultipartUpload(context.Background(), bucketName, file.Filename, uploadID, uploadedParts)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(200, gin.H{"message": "File uploaded successfully"})
 }
 
@@ -90,7 +126,7 @@ func DownloadFile(c *gin.Context) {
 
 	decryptedData, err := utils.Decrypt(buf.Bytes())
 	if err != nil {
-		//c.JSON(500, gin.H{"error": err.Error()})
+		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
