@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"Taurus_File_Upload/utils"
 	"bytes"
 	"context"
+	"fileupload/utils"
 	"io"
 
 	"github.com/gin-gonic/gin"

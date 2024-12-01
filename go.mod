@@ -1,10 +1,10 @@
-module Taurus_File_Upload
+module fileupload
 
-go 1.22.5
+go 1.23.3
 
 require (
 	github.com/gin-gonic/gin v1.10.0
-	github.com/minio/minio-go/v7 v7.0.80
+	github.com/minio/minio-go/v7 v7.0.81
 )
 
 require (

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"Taurus_File_Upload/handlers"
+	"fileupload/handlers"
 
 	"github.com/gin-gonic/gin"
 )
