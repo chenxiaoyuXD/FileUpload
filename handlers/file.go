@@ -11,14 +11,14 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-var minioClient *minio.Client
+var minioClient *minio.Core
 
 const defaultChunkSize = 1 * 1024 * 1024 // 1MB
 
 func InitMinio() {
-	// Initialize minio client object.
+	// Initialize minio core client object.
 	var err error
-	minioClient, err = minio.New("127.0.0.1:9000", &minio.Options{
+	minioClient, err = minio.NewCore("127.0.0.1:9000", &minio.Options{
 		Creds:  credentials.NewStaticV4("minioadmin", "minioadmin", ""),
 		Secure: false,
 	})
@@ -33,7 +33,8 @@ func UploadFile(c *gin.Context) {
 	ctx := context.Background()
 	err := minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
 	if err != nil {
-		if exists, _ := minioClient.BucketExists(ctx, bucketName); !exists {
+		exists, errBucketExists := minioClient.BucketExists(ctx, bucketName)
+		if errBucketExists != nil || !exists {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
@@ -51,6 +52,7 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 	defer src.Close()
+
 	// Get the file size
 	fileSize := file.Size
 
@@ -85,7 +87,7 @@ func UploadFile(c *gin.Context) {
 		}
 
 		// Upload the encrypted chunk
-		uploadPart, err := minioClient.PutObject(ctx, bucketName, file.Filename, uploadID, partNumber, bytes.NewReader(encryptedChunk), int64(len(encryptedChunk)), "", "", nil)
+		uploadPart, err := minioClient.PutObjectPart(ctx, bucketName, file.Filename, uploadID, partNumber, bytes.NewReader(encryptedChunk), int64(len(encryptedChunk)), minio.PutObjectPartOptions{})
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
@@ -97,7 +99,7 @@ func UploadFile(c *gin.Context) {
 	}
 
 	// Complete multipart upload
-	_, err = minioClient.CompleteMultipartUpload(context.Background(), bucketName, file.Filename, uploadID, uploadedParts)
+	_, err = minioClient.CompleteMultipartUpload(ctx, bucketName, file.Filename, uploadID, uploadedParts, minio.PutObjectOptions{})
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -109,7 +111,7 @@ func DownloadFile(c *gin.Context) {
 	objectName := c.Param("filename")
 	bucketName := "uploads"
 
-	obj, err := minioClient.GetObject(context.Background(), bucketName, objectName, minio.GetObjectOptions{})
+	obj, _, _, err := minioClient.GetObject(context.Background(), bucketName, objectName, minio.GetObjectOptions{})
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
