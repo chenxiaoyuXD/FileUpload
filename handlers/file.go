@@ -13,7 +13,7 @@ import (
 
 var minioClient *minio.Core
 
-const defaultChunkSize = 1 * 1024 * 1024 // 1MB
+const defaultChunkSize = 5 * 1024 * 1024 // 5MB
 
 func InitMinio() {
 	// Initialize minio core client object.
@@ -30,6 +30,7 @@ func InitMinio() {
 func UploadFile(c *gin.Context) {
 	bucketName := "uploads"
 
+	// Create bucket if it doesn't exist
 	ctx := context.Background()
 	err := minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
 	if err != nil {
@@ -53,9 +54,9 @@ func UploadFile(c *gin.Context) {
 	}
 	defer src.Close()
 
-	// Get the file size
 	fileSize := file.Size
 
+	// Initialize a new multipart upload.
 	uploadID, err := minioClient.NewMultipartUpload(ctx, bucketName, file.Filename, minio.PutObjectOptions{})
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
@@ -101,7 +102,7 @@ func UploadFile(c *gin.Context) {
 	// Complete multipart upload
 	_, err = minioClient.CompleteMultipartUpload(ctx, bucketName, file.Filename, uploadID, uploadedParts, minio.PutObjectOptions{})
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		c.JSON(500, gin.H{"error1111": err.Error()})
 		return
 	}
 	c.JSON(200, gin.H{"message": "File uploaded successfully"})
